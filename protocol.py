@@ -10,45 +10,48 @@ if TYPE_CHECKING:
 
 
 class Config:
+    # Argument Parser
     parser = argparse.ArgumentParser(description='Test argparse with optional IP address.')
-    parser.add_argument('-t', '--test', action='store_true', help='Enable test mode')
     parser.add_argument('ip', nargs='?', default=None, help='IP address to process')
-
+    parser.add_argument('port', type=int, nargs='?', default=None, help='Port number to use')
     args = parser.parse_args()
-    if args.test:
+    # Host
+    if args.ip:
         HOST = args.ip
+        FAMOUS_HOST = HOST
     else:
         HOST = socket.gethostbyname(socket.gethostname())
-
-    FAMOUS_HOST = "silicon.cs.umanitoba.ca"
-    PORT = 8793
+        FAMOUS_HOST = "silicon.cs.umanitoba.ca"
+    # Port
     FAMOUS_PORT = 8999
+    if args.port:
+        PORT = args.port
+    else:
+        PORT = 8793
+    # Name
     NAME = "Ahmed^2"
     FAMOUS_NAME = "Famous_Peer"
-    CHECKING_CONSENSUS = False
-
-    # peers
+    # Peers
     my_peer = None
     famous_peer1 = None
-
-    # constraints
+    # Constraints
     MAX_MESSAGES = 10
     MAX_CHARS = 20
     NONCE_MAX_CHARS = 40
     DIFFICULTY = 8
-
-    # TIMEOUTS
+    # Timeouts
     GOSSIP_TIMEOUT = 1.5
     CONSENSUS_TIMEOUT = GOSSIP_TIMEOUT*4
     STAT_TIMEOUT = GOSSIP_TIMEOUT*2
     GOSSIP_INTERVAL = 30
     CONSENSUS_INTERVAL = 300
     MAX_TRACKED_PEERS = 3
+    # Socket
     recv_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     recv_socket.bind(("", PORT))
     recv_socket.settimeout(GOSSIP_TIMEOUT)
-    con_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    con_socket.settimeout(GOSSIP_TIMEOUT)
+    consensus_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    consensus_socket.settimeout(GOSSIP_TIMEOUT)
 
 
 class Protocol:
@@ -112,6 +115,20 @@ class Protocol:
         return j
 
     @staticmethod
+    def make_announce(height: int, miner: str, nonce: str, messages: list, block_hash: str, timestamp: int) -> str:
+        j = json.dumps({
+            "type": "ANNOUNCE",
+            "height": height,
+            "minedBy": miner,
+            "nonce": nonce,
+            "messages": messages,
+            "hash": block_hash,
+            "timestamp": timestamp
+        })
+        return j
+
+
+    @staticmethod
     def make_stats(consensus: bool = False) -> str:
         j = {
             "type": "STATS"
@@ -134,19 +151,6 @@ class Protocol:
     def make_consensus() -> str:
         j = json.dumps({
             "type": "CONSENSUS"
-        })
-        return j
-
-    @staticmethod
-    def make_announce(height: int, miner: str, nonce: str, messages: list, block_hash: str, timestamp: int) -> str:
-        j = json.dumps({
-            "type": "ANNOUNCE",
-            "height": height,
-            "minedBy": miner,
-            "nonce": nonce,
-            "messages": messages,
-            "hash": block_hash,
-            "timestamp": timestamp
         })
         return j
 

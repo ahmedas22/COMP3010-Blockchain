@@ -44,12 +44,12 @@ class PeerList:
                     self.chains.append({sender_addr: {"height": height, "hash": block_hash}})
 
     def request_peer_stats(self) -> None:
-        stats_recv_thread = threading.Thread(target=Peer.recv_msg, args=(Config.con_socket, self), daemon=True)
+        stats_recv_thread = threading.Thread(target=Peer.recv_msg, args=(Config.consensus_socket, self), daemon=True)
         stats_recv_thread.start()
         for peer in self.peers:
             if peer.get_addr() not in self.ignore:
                 self.handle_msg(Protocol.parse_msg(Protocol.make_stats(True).encode()), peer.get_addr(),
-                                Config.con_socket)
+                                Config.consensus_socket)
         stats_recv_thread.join(Config.STAT_TIMEOUT)
 
     # Blocks
@@ -73,7 +73,7 @@ class PeerList:
             self.chosen_chain[message.get("height")] = new_block
 
     def get_chain_blocks(self, chain) -> None:
-        chain_recv_thread = threading.Thread(target=Peer.recv_msg, args=(Config.con_socket, self), daemon=True)
+        chain_recv_thread = threading.Thread(target=Peer.recv_msg, args=(Config.consensus_socket, self), daemon=True)
         chain_recv_thread.start()
         for _, value in chain.items():
             chain_height = value.get("height")
@@ -83,7 +83,7 @@ class PeerList:
                         self.sender = self.tracked_peers.pop(0)
                         self.tracked_peers.append(self.sender)
                         self.handle_msg(Protocol.parse_msg(Protocol.make_get_block(height, True).encode()), self.sender,
-                                        Config.con_socket)
+                                        Config.consensus_socket)
         chain_recv_thread.join(Config.CONSENSUS_TIMEOUT)
 
     def is_missing_blocks(self, chain):
@@ -162,7 +162,7 @@ class PeerList:
                         print("CONSENSUS COMPLETED")
                         with self.ignore_lock:
                             self.ignore = []
-                            return
+                        return
             # Step 4: if all indexes were tried, we re-do consensus
             if 0 < len(majority_chains) >= (chosen_chain_index + 1):
                 for sender in self.tracked_peers:
@@ -177,7 +177,7 @@ class PeerList:
             self.in_consensus = False
 
     def choose_majority_chain(self) -> list:
-        max_height = 0
+        max_height = self.chain.height
         longest_chains = []
 
         # Find the maximum height among the consensus data
@@ -203,7 +203,7 @@ class PeerList:
 
 if __name__ == "__main__":
     Config.my_peer = Peer(Config.NAME, Config.HOST, Config.PORT)
-    Config.famous_peer1 = Peer(Config.FAMOUS_NAME, Config.FAMOUS_HOST, Config.FAMOUS_PORT)
+    Config.famous_peer = Peer(Config.FAMOUS_NAME, Config.FAMOUS_HOST, Config.FAMOUS_PORT)
     peers = PeerList()
     consensus_thread = None
     threads = []
@@ -211,7 +211,7 @@ if __name__ == "__main__":
     try:
         last_gossip_time = 0
         last_consensus_time = 0
-        peers.gossiper.join_network(Config.famous_peer1)
+        peers.gossiper.join_network(Config.famous_peer)
 
         while True:
             current_time = time.time()
