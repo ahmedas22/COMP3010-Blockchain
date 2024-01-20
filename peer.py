@@ -1,5 +1,18 @@
+# -----------------------------------------
+# NAME: Ahmed Hasan
+# STUDENT NUMBER: 7932883
+# COURSE: COMP 3010, SECTION: A01
+# INSTRUCTOR: Robert Guderian
+# ASSIGNMENT: assignment 3
+# PORTS ASSIGNED: 8790-8794
+# Classes: Peer and Gossiper
+#
+# -----------------------------------------
+
+
 import random
 import uuid
+import time
 
 from protocol import Config, Protocol
 from typing import TYPE_CHECKING
@@ -14,6 +27,7 @@ class Peer:
         self.name = name
         self.host = host
         self.port = port
+        self.last_message_time = int(time.time())  # Initialize with current time
 
     def get_addr(self):
         addr = (self.host, self.port)
@@ -53,7 +67,6 @@ class Peer:
 
     def __repr__(self):
         return Protocol.make_gossip(self)
-
 
 
 class Gossiper:

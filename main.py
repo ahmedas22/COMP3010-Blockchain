@@ -1,6 +1,19 @@
+# -----------------------------------------
+# NAME: Ahmed Hasan
+# STUDENT NUMBER: 7932883
+# COURSE: COMP 3010, SECTION: A01
+# INSTRUCTOR: Robert Guderian
+# ASSIGNMENT: assignment 3
+# PORTS ASSIGNED: 8790-8794
+# Classes: PeerList and Main Method
+#
+# -----------------------------------------
+
 import select
 import time
 import threading
+import random
+from typing import Union
 from chain import Block, Blockchain
 from peer import Peer, Gossiper
 from protocol import Protocol, Config
@@ -18,10 +31,7 @@ class PeerList:
         self.sender = None
         self.in_consensus = False
         self.failed_consensus = False
-        self.chains_lock = threading.Lock()  # Lock for access to self.chains
-        self.chain_lock = threading.Lock()  # Lock for access to self.chains
-        self.ignore_lock = threading.Lock()  # Lock for access to self.chains
-        self.chosen_chain_lock = threading.Lock()  # Lock for access to self.chosen_chain
+        self.chosen_chain_lock = threading.Lock()
 
         self.gossiper = Gossiper()
         self.chain = Blockchain()
@@ -29,8 +39,7 @@ class PeerList:
     # Peer Stats
     def handle_stats(self, message: dict, sender_addr: tuple, socket) -> None:
         if not message.get("consensus"):
-            with self.chain_lock:
-                reply_msg = str(self.chain)
+            reply_msg = str(self.chain)
         else:
             reply_msg = Protocol.make_stats()
         Peer.send_msg(reply_msg, sender_addr, socket)
@@ -40,15 +49,14 @@ class PeerList:
             height = int(message.get("height"))
             block_hash = message.get("hash")
             if height and block_hash:
-                with self.chains_lock:
-                    self.chains.append({sender_addr: {"height": height, "hash": block_hash}})
+                self.chains.append({sender_addr: {"height": height, "hash": block_hash}})
 
     def request_peer_stats(self) -> None:
-        stats_recv_thread = threading.Thread(target=Peer.recv_msg, args=(Config.consensus_socket, self), daemon=True)
+        stats_recv_thread = threading.Thread(target=Peer.recv_msg, args=(Config.consensus_socket, self))
         stats_recv_thread.start()
-        for peer in self.peers:
-            if peer.get_addr() not in self.ignore:
-                self.handle_msg(Protocol.parse_msg(Protocol.make_stats(True).encode()), peer.get_addr(),
+        for curr_peer in self.peers:
+            if curr_peer.get_addr() not in self.ignore:
+                self.handle_msg(Protocol.parse_msg(Protocol.make_stats(True).encode()), curr_peer.get_addr(),
                                 Config.consensus_socket)
         stats_recv_thread.join(Config.STAT_TIMEOUT)
 
@@ -69,21 +77,19 @@ class PeerList:
     def handle_get_block_reply(self, message: dict) -> None:
         new_block = Block(message.get("hash"), message.get("minedBy"), message.get("height"),
                           message.get("messages"), message.get("nonce"), message.get("timestamp"))
-        with self.chosen_chain_lock:
-            self.chosen_chain[message.get("height")] = new_block
+        self.chosen_chain[message.get("height")] = new_block
 
     def get_chain_blocks(self, chain) -> None:
-        chain_recv_thread = threading.Thread(target=Peer.recv_msg, args=(Config.consensus_socket, self), daemon=True)
+        chain_recv_thread = threading.Thread(target=Peer.recv_msg, args=(Config.consensus_socket, self))
         chain_recv_thread.start()
         for _, value in chain.items():
             chain_height = value.get("height")
             for height in range(chain_height - 1, self.chain.height - 1, -1):
                 if height not in self.chosen_chain or self.chosen_chain[height] is None:
-                    with self.chains_lock:
-                        self.sender = self.tracked_peers.pop(0)
-                        self.tracked_peers.append(self.sender)
-                        self.handle_msg(Protocol.parse_msg(Protocol.make_get_block(height, True).encode()), self.sender,
-                                        Config.consensus_socket)
+                    self.sender = self.tracked_peers.pop(0)
+                    self.tracked_peers.append(self.sender)
+                    self.handle_msg(Protocol.parse_msg(Protocol.make_get_block(height, True).encode()), self.sender,
+                                    Config.consensus_socket)
         chain_recv_thread.join(Config.CONSENSUS_TIMEOUT)
 
     def is_missing_blocks(self, chain):
@@ -104,6 +110,9 @@ class PeerList:
 
     def handle_msg(self, message: dict, sender_addr: tuple, socket=Config.recv_socket) -> None:
         if message:
+            peer = self.find_peer_by_addr(sender_addr)
+            if peer:
+                peer.last_message_time = int(time.time())
             msg_type = message.get("type")
 
             match msg_type:
@@ -117,13 +126,27 @@ class PeerList:
                     self.handle_stats_reply(message, sender_addr)
                 case "CONSENSUS":
                     if not self.in_consensus:
-                        self.consensus()
+                        thread = threading.Thread(target=peers.consensus)
+                        thread.start()
                 case "GET_BLOCK":
                     self.handle_get_block(message, sender_addr, socket)
                 case "GET_BLOCK_REPLY":
                     self.handle_get_block_reply(message)
+                case "ANNOUNCE":
+                    self.handle_announce(message)
                 case _:
                     print("Not implemented")
+
+    def find_peer_by_addr(self, addr: tuple) -> Union['Peer', None]:
+        for curr_peer in self.peers:
+            if curr_peer.get_addr() == addr:
+                return curr_peer
+        return None
+
+    def handle_announce(self, message: dict) -> None:
+        new_block = Block(message.get("hash"), message.get("minedBy"), message.get("height"),
+                          message.get("messages"), message.get("nonce"), message.get("timestamp"))
+        self.chain.add_block(new_block)
 
     def consensus(self) -> None:
         try:
@@ -131,6 +154,7 @@ class PeerList:
             self.chains = []
             self.tracked_peers = []
             self.sender = None
+            self.chosen_chain = {}
             print("STARTING CONSENSUS")
 
             # Step 1: Get stats from peers
@@ -141,34 +165,33 @@ class PeerList:
             chosen_chain_index = 0
 
             for chosen_chain_index in range(len(majority_chains)):
-                chain = majority_chains[chosen_chain_index]
-                self.chosen_chain = {}
-                # Step 2.a: Get blocks in the chosen chain
-                self.get_chain_blocks(chain)
-
-                # Step 2.b: if missing blocks, re-request them
-                retries = 0
-                while self.is_missing_blocks(chain) and retries <= 3:
+                with self.chosen_chain_lock:
+                    chain = majority_chains[chosen_chain_index]
+                    # Step 2.a: Get blocks in the chosen chain
                     self.get_chain_blocks(chain)
-                    retries += 1
 
-                # Step 3: if not missing blocks, finish consensus
-                if not self.is_missing_blocks(chain):
-                    # Step 3.a: add blocks to blockchain
-                    added = self.add_blocks_to_blockchain()
+                    # Step 2.b: if missing blocks, re-request them
+                    retries = 0
+                    while self.is_missing_blocks(chain) and retries <= 3:
+                        self.get_chain_blocks(chain)
+                        retries += 1
 
-                    # Step 3.b: if chain is valid
-                    if added and self.chain.validate():
-                        print("CONSENSUS COMPLETED")
-                        with self.ignore_lock:
+                    # Step 3: if not missing blocks, finish consensus
+                    if not self.is_missing_blocks(chain):
+                        # Step 3.a: add blocks to blockchain
+                        added = self.add_blocks_to_blockchain()
+
+                        # Step 3.b: if chain is valid
+                        if added and self.chain.validate():
+                            print("CONSENSUS COMPLETED")
                             self.ignore = []
-                        return
+                            return
             # Step 4: if all indexes were tried, we re-do consensus
             if 0 < len(majority_chains) >= (chosen_chain_index + 1):
                 for sender in self.tracked_peers:
-                    with self.ignore_lock:
-                        self.ignore.append(sender)
-                re_consensus_thread = threading.Thread(target=self.consensus, daemon=True)
+                    self.ignore.append(sender)
+                print("RE-DOING CONSENSUS")
+                re_consensus_thread = threading.Thread(target=self.consensus)
                 re_consensus_thread.start()
                 re_consensus_thread.join()
         except Exception as e:
@@ -200,22 +223,34 @@ class PeerList:
 
         return longest_chains
 
+    def mine(self):
+        while True:
+            if self.chain.height > 0:
+                messages = random.sample(Config.word_list, 5)
+                mined_block = Blockchain.mine_block(messages)
+                with self.chosen_chain_lock:
+                    for announce_to in self.peers:
+                        Peer.send_msg(mined_block, announce_to.get_addr())
+
 
 if __name__ == "__main__":
     Config.my_peer = Peer(Config.NAME, Config.HOST, Config.PORT)
     Config.famous_peer = Peer(Config.FAMOUS_NAME, Config.FAMOUS_HOST, Config.FAMOUS_PORT)
     peers = PeerList()
     consensus_thread = None
-    threads = []
 
     try:
         last_gossip_time = 0
         last_consensus_time = 0
+        last_mining_time = 0
         peers.gossiper.join_network(Config.famous_peer)
+        mining_thread = threading.Thread(target=peers.mine)
+        mining_thread.start()
 
         while True:
-            current_time = time.time()
-            readable, _, _ = select.select([Config.recv_socket], [], [], 0.1)
+            current_time = int(time.time())
+
+            readable, _, _ = select.select([Config.recv_socket], [], [], 1)
 
             for sock in readable:
                 Peer.recv_msg(sock, peers)
@@ -224,18 +259,22 @@ if __name__ == "__main__":
                 peers.gossiper.gossip_to_peers(peers.peers, Protocol.parse_msg(repr(Config.my_peer).encode()))
                 last_gossip_time = current_time
 
-            if time.time() >= last_consensus_time + Config.CONSENSUS_INTERVAL:
-                last_consensus_time = time.time()
+            active_peers = []
+            for peer in peers.peers:
+                if current_time >= peer.last_message_time + Config.CLEANUP_INTERVAL or current_time == peer.last_message_time:
+                    active_peers.append(peer)
+            peers.peers = active_peers
 
+            if current_time >= last_consensus_time + Config.CONSENSUS_INTERVAL:
                 if not peers.in_consensus:
-                    consensus_thread = threading.Thread(target=peers.consensus, daemon=True)
+                    consensus_thread = threading.Thread(target=peers.consensus)
                     consensus_thread.start()
+                last_consensus_time = current_time
 
             if consensus_thread and not consensus_thread.is_alive():
                 consensus_thread.join()
-                consensus_thread = None
 
     except KeyboardInterrupt:
         print("Peer shutting down.")
-        for thread in threads:
-            thread.join()
+        if consensus_thread and not consensus_thread.is_alive():
+            consensus_thread.join()

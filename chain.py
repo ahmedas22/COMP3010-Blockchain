@@ -1,3 +1,14 @@
+# -----------------------------------------
+# NAME: Ahmed Hasan
+# STUDENT NUMBER: 7932883
+# COURSE: COMP 3010, SECTION: A01
+# INSTRUCTOR: Robert Guderian
+# ASSIGNMENT: assignment 3
+# PORTS ASSIGNED: 8790-8794
+# Classes: Block and Blockchain
+#
+# -----------------------------------------
+
 import hashlib
 import time
 
@@ -55,8 +66,8 @@ class Block:
         to_add_hash = self.calculate_hash()
 
         if Blockchain.calculate_difficulty(to_add_hash) < difficulty:
-            for offset in range(difficulty, Config.DIFFICULTY-1, -1):
-                if to_add_hash[-1 * (difficulty-offset):] == '0' * (difficulty-offset) and Blockchain.height > 1:
+            for offset in range(difficulty, Config.DIFFICULTY - 1, -1):
+                if to_add_hash[-1 * (difficulty - offset):] == '0' * (difficulty - offset) and Blockchain.height > 1:
                     return True
 
         if to_add_hash[-1 * difficulty:] != '0' * difficulty:
@@ -101,6 +112,14 @@ class Blockchain:
                 else:
                     break
         return difficulty
+
+    @classmethod
+    def mine_block(cls, messages: list):
+        new_block = Block(miner=Config.NAME, messages=messages, height=cls.height, nonce="0")
+        new_block.hash = new_block.mine_block(cls.difficulty)
+        return Protocol.make_announce(new_block.height, new_block.miner, new_block.nonce, new_block.messages,
+                                      new_block.hash, new_block.timestamp)
+
     @classmethod
     def validate(cls):
         for i in range(1, len(cls.chain)):

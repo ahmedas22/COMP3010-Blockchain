@@ -5,7 +5,7 @@
       <paths name="UofM Main">
         <serverdata>
           <mappings>
-            <mapping deploy="/A3" local="$PROJECT_DIR$" web="/" />
+            <mapping deploy="/Ahmed_Hasan_A3" local="$PROJECT_DIR$" web="/" />
           </mappings>
         </serverdata>
       </paths>

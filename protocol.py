@@ -1,20 +1,32 @@
-import json
-import uuid
-import socket
+# -----------------------------------------
+# NAME: Ahmed Hasan
+# STUDENT NUMBER: 7932883
+# COURSE: COMP 3010, SECTION: A01
+# INSTRUCTOR: Robert Guderian
+# ASSIGNMENT: assignment 3
+# PORTS ASSIGNED: 8790-8794
+# Classes: Config and Protocol
+#
+# -----------------------------------------
+
+
 import argparse
+import json
+import socket
+import uuid
 from typing import Union, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from peer import Peer
-    from chain import Block
 
 
 class Config:
     # Argument Parser
-    parser = argparse.ArgumentParser(description='Test argparse with optional IP address.')
+    parser = argparse.ArgumentParser(description='Peer Configurator.')
     parser.add_argument('ip', nargs='?', default=None, help='IP address to process')
     parser.add_argument('port', type=int, nargs='?', default=None, help='Port number to use')
     args = parser.parse_args()
+
     # Host
     if args.ip:
         HOST = args.ip
@@ -22,36 +34,48 @@ class Config:
     else:
         HOST = socket.gethostbyname(socket.gethostname())
         FAMOUS_HOST = "silicon.cs.umanitoba.ca"
+
     # Port
     FAMOUS_PORT = 8999
     if args.port:
         PORT = args.port
     else:
         PORT = 8793
+
     # Name
     NAME = "Ahmed^2"
     FAMOUS_NAME = "Famous_Peer"
+
     # Peers
     my_peer = None
     famous_peer1 = None
+
     # Constraints
     MAX_MESSAGES = 10
     MAX_CHARS = 20
     NONCE_MAX_CHARS = 40
     DIFFICULTY = 8
+
     # Timeouts
     GOSSIP_TIMEOUT = 1.5
-    CONSENSUS_TIMEOUT = GOSSIP_TIMEOUT*4
-    STAT_TIMEOUT = GOSSIP_TIMEOUT*2
+    CONSENSUS_TIMEOUT = GOSSIP_TIMEOUT * 4
+    STAT_TIMEOUT = GOSSIP_TIMEOUT * 2
     GOSSIP_INTERVAL = 30
+    MINING_INTERVAL = GOSSIP_INTERVAL * 4
+    CLEANUP_INTERVAL = GOSSIP_INTERVAL + STAT_TIMEOUT
     CONSENSUS_INTERVAL = 300
     MAX_TRACKED_PEERS = 3
+
     # Socket
     recv_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     recv_socket.bind(("", PORT))
     recv_socket.settimeout(GOSSIP_TIMEOUT)
     consensus_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     consensus_socket.settimeout(GOSSIP_TIMEOUT)
+
+    # Words
+    word_list = ["hello", "world", "i love rob", "3010 is hard", "3010 is awesome", "bahrain", "apple", "banana",
+                 "cherry", "orange", "grape", "kiwi", "melon", "pear", "plum", "strawberry"]
 
 
 class Protocol:
@@ -92,7 +116,7 @@ class Protocol:
         return j
 
     @staticmethod
-    def make_get_block(height: int,consensus: bool = False) -> str:
+    def make_get_block(height: int, consensus: bool = False) -> str:
         j = {
             "type": "GET_BLOCK",
             "height": height
@@ -102,7 +126,8 @@ class Protocol:
         return json.dumps(j)
 
     @staticmethod
-    def make_get_block_reply(timestamp: int, hash: str, miner: str = None, nonce: str = None, height: int = None, messages: list = None) -> str:
+    def make_get_block_reply(timestamp: int, hash: str, miner: str = None, nonce: str = None, height: int = None,
+                             messages: list = None) -> str:
         j = json.dumps({
             "type": "GET_BLOCK_REPLY",
             "hash": hash,
@@ -126,7 +151,6 @@ class Protocol:
             "timestamp": timestamp
         })
         return j
-
 
     @staticmethod
     def make_stats(consensus: bool = False) -> str:
